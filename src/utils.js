@@ -51,6 +51,47 @@ export async function fetchReviews(url, sort, nextPage = "", search_query = "") 
 
 
 /**
+ * Fetches a page with exponential backoff retry on failure.
+ * 
+ * @param {string} url - The URL to fetch reviews from.
+ * @param {string} sort - Sorting parameter for reviews.
+ * @param {string} nextPage - Token for the next page.
+ * @param {string} search_query - Search query to filter reviews.
+ * @param {number} maxRetries - Maximum number of retries (default: 3).
+ * @param {number} baseDelay - Base delay in ms for exponential backoff (default: 2000).
+ * @returns {Promise<Object|null>} Parsed data or null if all retries failed.
+ */
+async function fetchWithRetry(url, sort, nextPage, search_query, maxRetries = 3, baseDelay = 2000) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            const data = await fetchReviews(url, sort, nextPage, search_query);
+            
+            // Check if we got valid review data
+            if (Array.isArray(data[2]) && data[2].length > 0) {
+                return data;
+            }
+            
+            // Got empty/null data - might be rate limited
+            if (attempt < maxRetries) {
+                const delay = baseDelay * Math.pow(2, attempt); // 2s, 4s, 8s
+                console.log(`Page returned empty data. Retry ${attempt + 1}/${maxRetries} after ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        } catch (err) {
+            if (attempt < maxRetries) {
+                const delay = baseDelay * Math.pow(2, attempt);
+                console.log(`Fetch error: ${err.message}. Retry ${attempt + 1}/${maxRetries} after ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                console.log(`Fetch failed after ${maxRetries} retries: ${err.message}`);
+                return null;
+            }
+        }
+    }
+    return null; // All retries exhausted with empty data
+}
+
+/**
  * Paginates through reviews from a given URL.
  *
  * @param {string} url - The URL to fetch reviews from.
@@ -62,17 +103,35 @@ export async function fetchReviews(url, sort, nextPage = "", search_query = "") 
  * @returns {Promise<Array>} Array of reviews or parsed reviews.
  */
 export async function paginateReviews(url, sort, pages, search_query, clean, initialData) {
-    let reviews = initialData[2];
+    let reviews = initialData[2] || [];
     let nextPage = initialData[1]?.replace(/"/g, "");
+    
+    console.log(`Initial page: ${initialData[2]?.length || 0} reviews`);
+    
     let currentPage = 2;
     while (nextPage && (pages === "max" || currentPage <= +pages)) {
         console.log(`Scraping page ${currentPage}...`);
-        const data = await fetchReviews(url, sort, nextPage, search_query);
+        
+        const data = await fetchWithRetry(url, sort, nextPage, search_query);
+        
+        if (!data || !Array.isArray(data[2])) {
+            console.log(`Page ${currentPage}: No more data after retries. Returning ${reviews.length} reviews.`);
+            break;
+        }
+        
+        console.log(`Page ${currentPage}: ${data[2].length} reviews`);
         reviews = [...reviews, ...data[2]];
         nextPage = data[1]?.replace(/"/g, "");
-        if (!nextPage) break;
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Avoid rate-limiting
+        
+        if (!nextPage) {
+            console.log(`Pagination complete - no more pages.`);
+            break;
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Standard delay between pages
         currentPage++;
     }
+    
+    console.log(`Total reviews collected: ${reviews.length}`);
     return clean ? await parser(reviews) : reviews;
 }
