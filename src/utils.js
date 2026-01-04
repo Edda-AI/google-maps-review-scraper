@@ -40,7 +40,18 @@ export function validateParams(url, sort_type, pages, clean) {
  */
 export async function fetchReviews(url, sort, nextPage = "", search_query = "") {
     const apiUrl = listugcposts(url, sort, nextPage, search_query);
-    const response = await fetch(apiUrl);
+    
+    // Cookie support: Google requires cookies for the API to work
+    // Set GOOGLE_MAPS_COOKIES env var with cookies from Firefox DevTools
+    const cookies = process.env.GOOGLE_MAPS_COOKIES || "";
+    const headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:146.0) Gecko/20100101 Firefox/146.0"
+    };
+    if (cookies) {
+        headers["Cookie"] = cookies;
+    }
+    
+    const response = await fetch(apiUrl, { headers });
     if (!response.ok) {
         throw new Error(`Failed to fetch reviews: ${response.statusText}`);
     }
