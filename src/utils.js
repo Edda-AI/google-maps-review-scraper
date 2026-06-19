@@ -44,11 +44,15 @@ export async function fetchReviews(url, sort, nextPage = "", search_query = "") 
     // Cookie support: Google requires cookies for the API to work
     // Set GOOGLE_MAPS_COOKIES env var with cookies from Firefox DevTools
     const cookies = process.env.GOOGLE_MAPS_COOKIES || "";
+    const mapsBgKey = process.env.GOOGLE_MAPS_BGKEY || "";
     const headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:146.0) Gecko/20100101 Firefox/146.0"
     };
     if (cookies) {
         headers["Cookie"] = cookies;
+    }
+    if (mapsBgKey) {
+        headers["x-maps-bgkey"] = mapsBgKey;
     }
     
     const response = await fetch(apiUrl, { headers });
